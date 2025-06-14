@@ -1,3 +1,5 @@
 package tools
 
-type ToolManager interface{}
+type ToolManager interface {
+	AddTool()
+}
