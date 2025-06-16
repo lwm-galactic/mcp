@@ -1,13 +1,23 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/lwm-galactic/mcp/context"
+	"github.com/lwm-galactic/mcp/core/message"
+	"github.com/lwm-galactic/mcp/core/resources"
 	"github.com/lwm-galactic/mcp/handler"
 	"net/http"
 	"regexp"
 	"strings"
 )
+
+// 路由项
+type route struct {
+	pattern    *regexp.Regexp
+	resource   resources.Resource
+	paramNames []string
+}
 
 // ResourceRegistry 资源注册器
 type ResourceRegistry struct {
@@ -20,9 +30,8 @@ func NewResourceRegistry() *ResourceRegistry {
 	}
 }
 
-// RegisterResource 注册一个资源处理器
-func (r *ResourceRegistry) RegisterResource(uriPattern string, handler handler.ResourceHandler) {
-	// 替换参数部分为正则表达式组
+// Register 注册一个资源
+func (r *ResourceRegistry) Register(uriPattern string, res resources.Resource) {
 	rePattern := regexp.MustCompile(`\{([^}]+)\}`)
 
 	matches := rePattern.FindAllStringSubmatch(uriPattern, -1)
@@ -31,94 +40,135 @@ func (r *ResourceRegistry) RegisterResource(uriPattern string, handler handler.R
 		paramNames = append(paramNames, m[1])
 	}
 
-	// 将 {name} 替换为命名捕获组 (?P<name>[^/]+)
 	reStr := rePattern.ReplaceAllStringFunc(uriPattern, func(s string) string {
 		name := strings.Trim(s, "{}")
 		return fmt.Sprintf(`(?P<%s>[^/]+)`, name)
 	})
 
-	// 构建正则表达式
 	re := regexp.MustCompile(`^` + reStr + `$`)
 	r.routes = append(r.routes, &route{
 		pattern:    re,
-		handler:    handler,
+		resource:   res,
 		paramNames: paramNames,
 	})
 }
 
-// Match 查找匹配的路由和参数
-func (r *ResourceRegistry) Match(path string) (handler.ResourceHandler, map[string]string, bool) {
-	for _, route := range r.routes {
-		matches := route.pattern.FindStringSubmatch(path)
+// Get 查找资源（按 URI）
+func (r *ResourceRegistry) Get(uri string) (resources.Resource, bool) {
+	res, _, ok := r.Match(uri)
+	return res, ok
+}
+
+func (r *ResourceRegistry) Match(path string) (resources.Resource, map[string]string, bool) {
+	for _, rt := range r.routes {
+		matches := rt.pattern.FindStringSubmatch(path)
 		if matches == nil {
 			continue
 		}
 
 		params := make(map[string]string)
-		for i, name := range route.pattern.SubexpNames()[1:] {
+		for i, name := range rt.pattern.SubexpNames()[1:] {
 			if i < len(matches)-1 {
 				params[name] = matches[i+1]
 			}
 		}
 
-		return route.handler, params, true
+		return rt.resource, params, true
 	}
 	return nil, nil, false
 }
 
-// RegisterResourceRoutes 注册资源访问路由
-func RegisterResourceRoutes(mux *http.ServeMux, registry *ResourceRegistry, prefix string) {
-	if prefix == "" {
-		prefix = "/resource/"
-	}
-
-	mux.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
-		// 提取路径部分
-		path := r.URL.Path[len(prefix):]
-		if path == "" {
-			sendError(w, "missing resource path", http.StatusBadRequest)
-			return
+// makeReadResourceHandler 创建 read_resource 的处理函数
+func makeReadResourceHandler(registry *ResourceRegistry) handler.RPCHandlerFunc {
+	return func(params map[string]interface{}, w http.ResponseWriter, r *http.Request) error {
+		uri, ok := params["uri"].(string)
+		if !ok || uri == "" {
+			return fmt.Errorf("missing or invalid resource URI")
 		}
 
-		// 匹配路由并获取处理器和参数
-		handlerFunc, params, ok := registry.Match(path)
-		if !ok {
-			sendError(w, fmt.Sprintf("resource '%s' not found", path), http.StatusNotFound)
-			return
+		resource, exists := registry.Get(uri)
+		if !exists {
+			return fmt.Errorf("resource not found: %s", uri)
 		}
 
-		// 构造上下文
 		ctx := &context.ResourceContext{
-			Request: r,
-			Params:  params,
+			Request: nil, // 可选：注入实际请求上下文
+			Params:  map[string]string{},
 		}
 
-		// 执行资源处理器
-		data, err := handlerFunc(ctx)
+		content, err := resource.GetContent(ctx)
 		if err != nil {
-			sendError(w, err.Error(), http.StatusInternalServerError)
-			return
+			return err
 		}
 
-		// 返回结果
-		sendSuccess(w, map[string]interface{}{
-			"path":   path,
-			"params": params,
-			"data":   string(data),
-		})
-	})
+		resp := message.Response{
+			Status: "success",
+			Data:   content,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if isStreamingRequest(r) {
+			// 流式返回（适用于 SSE 或 Streamable HTTP）
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				return fmt.Errorf("streaming unsupported")
+			}
+			json.NewEncoder(w).Encode(resp)
+			flusher.Flush()
+		} else {
+			// 普通 HTTP 返回
+			return json.NewEncoder(w).Encode(resp)
+		}
+
+		return nil
+	}
 }
-func RegisterResourceListRoute(mux *http.ServeMux, registry *ResourceRegistry, prefix string) {
-	mux.HandleFunc(prefix+"list", func(w http.ResponseWriter, r *http.Request) {
-		var routesInfo []map[string]interface{}
+
+// makeListResourcesHandler 创建 list_resources 的处理函数
+func makeListResourcesHandler(registry *ResourceRegistry) handler.RPCHandlerFunc {
+	return func(_ map[string]interface{}, w http.ResponseWriter, r *http.Request) error {
+		resources := make([]map[string]interface{}, 0, len(registry.routes))
 		for _, route := range registry.routes {
-			routesInfo = append(routesInfo, map[string]interface{}{
-				"pattern":    route.pattern.String(),
-				"paramNames": route.paramNames,
+			resources = append(resources, map[string]interface{}{
+				"name":        route.resource.Name(),
+				"description": route.resource.Description(),
+				"type":        route.resource.Type(),
+				"pattern":     route.pattern.String(),
 			})
 		}
-		sendSuccess(w, map[string]interface{}{
-			"resources": routesInfo,
-		})
+		resp := message.Response{
+			Status: "success",
+			Data:   resources,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if isStreamingRequest(r) {
+			// 流式返回（适用于 SSE 或 Streamable HTTP）
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				return fmt.Errorf("streaming unsupported")
+			}
+			json.NewEncoder(w).Encode(resp)
+			flusher.Flush()
+		} else {
+			// 普通 HTTP 返回
+			return json.NewEncoder(w).Encode(resp)
+		}
+
+		return nil
+	}
+}
+
+func RegisterResourceRoutes(mux *http.ServeMux, registry *ResourceRegistry) {
+	prefix := "/resource/"
+
+	mux.HandleFunc(prefix+"read", func(w http.ResponseWriter, r *http.Request) {
+		handleRPC(w, r, makeReadResourceHandler(registry))
+	})
+
+	mux.HandleFunc(prefix+"list", func(w http.ResponseWriter, r *http.Request) {
+		handleRPC(w, r, makeListResourcesHandler(registry))
 	})
 }

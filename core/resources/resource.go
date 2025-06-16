@@ -1,5 +1,7 @@
 package resources
 
+import "github.com/lwm-galactic/mcp/context"
+
 type ResourceType string
 
 const (
@@ -14,5 +16,5 @@ type Resource interface {
 	Name() string
 	Description() string
 	Type() ResourceType // 可以是 "text", "json", "file", "url" 等
-	GetContent() (string, error)
+	GetContent(ctx *context.ResourceContext) ([]byte, error)
 }

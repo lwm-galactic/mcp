@@ -2,11 +2,10 @@ package serve
 
 import (
 	"fmt"
+	"github.com/lwm-galactic/mcp/core/resources"
 	"github.com/lwm-galactic/mcp/core/tools"
-	"github.com/lwm-galactic/mcp/handler"
 	"github.com/lwm-galactic/mcp/router"
 	"net/http"
-	"strings"
 )
 
 type TransportType string
@@ -23,7 +22,7 @@ type McpServe struct {
 	resourceRegistry *router.ResourceRegistry
 	toolRegistry     *router.ToolRegistry
 	middlewares      []func(http.Handler) http.Handler
-	resourcePrefix   string // 新增字段
+	promptRegistry   *router.ToolRegistry
 }
 
 func NewMcpServe(name, describe string) *McpServe {
@@ -32,22 +31,11 @@ func NewMcpServe(name, describe string) *McpServe {
 		Describe:         describe,
 		toolRegistry:     router.NewToolRegistry(),
 		resourceRegistry: router.NewResourceRegistry(),
+		promptRegistry:   router.NewToolRegistry(),
 		middlewares:      []func(http.Handler) http.Handler{},
-		resourcePrefix:   "/resource/",
 	}
 }
 
-// SetResourcePrefix 设置资源访问的 URL 前缀
-func (s *McpServe) SetResourcePrefix(prefix string) {
-	if prefix == "" {
-		prefix = "/resource/"
-	}
-	// 确保以 '/' 结尾
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
-	}
-	s.resourcePrefix = prefix
-}
 func (s *McpServe) Run(addr string, transport TransportType) error {
 	// 根据 transport 类型选择处理方式
 	switch transport {
@@ -64,8 +52,8 @@ func (s *McpServe) Run(addr string, transport TransportType) error {
 }
 
 // RegisterResource 注册资源
-func (s *McpServe) RegisterResource(uriPattern string, handler handler.ResourceHandler) {
-	s.resourceRegistry.RegisterResource(uriPattern, handler)
+func (s *McpServe) RegisterResource(uriPattern string, resource resources.Resource) {
+	s.resourceRegistry.Register(uriPattern, resource)
 }
 
 // RegisterTool 注册工具
@@ -83,7 +71,7 @@ func (s *McpServe) startSSE(addr string) error {
 	mux := http.NewServeMux()
 
 	// 注册资源和工具路由
-	router.RegisterResourceRoutes(mux, s.resourceRegistry, s.resourcePrefix)
+	router.RegisterResourceRoutes(mux, s.resourceRegistry)
 	router.RegisterToolRoutesSSE(mux, s.toolRegistry)
 
 	// 构建中间件链
@@ -99,7 +87,7 @@ func (s *McpServe) startHTTP(addr string) error {
 	mux := http.NewServeMux()
 
 	// 注册资源和工具路由
-	router.RegisterResourceRoutes(mux, s.resourceRegistry, s.resourcePrefix)
+	router.RegisterResourceRoutes(mux, s.resourceRegistry)
 	router.RegisterToolRoutesHTTP(mux, s.toolRegistry)
 
 	// 构建中间件链
@@ -115,7 +103,7 @@ func (s *McpServe) startStreamableHTTP(addr string) error {
 	mux := http.NewServeMux()
 
 	// 注册资源和工具路由
-	router.RegisterResourceRoutes(mux, s.resourceRegistry, s.resourcePrefix)
+	router.RegisterResourceRoutes(mux, s.resourceRegistry)
 	router.RegisterToolRoutesStreamableHTTP(mux, s.toolRegistry)
 
 	// 构建中间件链

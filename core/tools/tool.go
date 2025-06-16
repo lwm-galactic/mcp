@@ -24,6 +24,7 @@ type ParamSchema struct {
 
 // ToolSchema 描述整个工具的元信息
 type ToolSchema struct {
-	Metadata   ToolMetadata  `json:"metadata"`
-	Parameters []ParamSchema `json:"parameters"`
+	Metadata    ToolMetadata           `json:"metadata"`
+	Parameters  []ParamSchema          `json:"parameters"`
+	Annotations map[string]interface{} `json:"annotations,omitempty"`
 }
