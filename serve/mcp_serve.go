@@ -49,24 +49,15 @@ func (s *McpServe) SetResourcePrefix(prefix string) {
 	s.resourcePrefix = prefix
 }
 func (s *McpServe) Run(addr string, transport TransportType) error {
-	// 创建多路复用器
-	mux := http.NewServeMux()
-
-	// 注册资源和工具路由
-	router.RegisterResourceRoutes(mux, s.resourceRegistry, s.resourcePrefix)
-	router.RegisterToolRoutes(mux, s.toolRegistry)
-
-	// 构建中间件链
-	h := http.Handler(mux)
-	for _, middleware := range s.middlewares {
-		h = middleware(h)
-	}
-
 	// 根据 transport 类型选择处理方式
 	switch transport {
-	case TransportSSE, TransportHTTP, TransportStreamableHTTP:
-		// 暂时统一使用标准 HTTP 处理
-		return http.ListenAndServe(addr, h)
+	case TransportSSE:
+		return s.startSSE(addr)
+	case TransportStreamableHTTP:
+		return s.startStreamableHTTP(addr)
+	case TransportHTTP:
+		return s.startHTTP(addr)
+
 	default:
 		return fmt.Errorf("unsupported transport type: %s", transport)
 	}
@@ -77,12 +68,60 @@ func (s *McpServe) RegisterResource(uriPattern string, handler handler.ResourceH
 	s.resourceRegistry.RegisterResource(uriPattern, handler)
 }
 
+// RegisterTool 注册工具
 func (s *McpServe) RegisterTool(schema tools.ToolSchema, tool tools.Tool) {
 	s.toolRegistry.Register(tool, schema)
 }
 
-// RegisterTool 注册工具
-
+// Use 使用中间键
 func (s *McpServe) Use(middleware func(http.Handler) http.Handler) {
 	s.middlewares = append(s.middlewares, middleware)
+}
+
+func (s *McpServe) startSSE(addr string) error {
+	// 创建多路复用器
+	mux := http.NewServeMux()
+
+	// 注册资源和工具路由
+	router.RegisterResourceRoutes(mux, s.resourceRegistry, s.resourcePrefix)
+	router.RegisterToolRoutesSSE(mux, s.toolRegistry)
+
+	// 构建中间件链
+	h := http.Handler(mux)
+	for _, middleware := range s.middlewares {
+		h = middleware(h)
+	}
+	return http.ListenAndServe(addr, h)
+}
+
+func (s *McpServe) startHTTP(addr string) error {
+	// 创建多路复用器
+	mux := http.NewServeMux()
+
+	// 注册资源和工具路由
+	router.RegisterResourceRoutes(mux, s.resourceRegistry, s.resourcePrefix)
+	router.RegisterToolRoutesHTTP(mux, s.toolRegistry)
+
+	// 构建中间件链
+	h := http.Handler(mux)
+	for _, middleware := range s.middlewares {
+		h = middleware(h)
+	}
+	return http.ListenAndServe(addr, h)
+}
+
+func (s *McpServe) startStreamableHTTP(addr string) error {
+	// 创建多路复用器
+	mux := http.NewServeMux()
+
+	// 注册资源和工具路由
+	router.RegisterResourceRoutes(mux, s.resourceRegistry, s.resourcePrefix)
+	router.RegisterToolRoutesStreamableHTTP(mux, s.toolRegistry)
+
+	// 构建中间件链
+	h := http.Handler(mux)
+	for _, middleware := range s.middlewares {
+		h = middleware(h)
+	}
+	return http.ListenAndServe(addr, h)
 }

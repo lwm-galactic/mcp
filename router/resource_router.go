@@ -108,7 +108,6 @@ func RegisterResourceRoutes(mux *http.ServeMux, registry *ResourceRegistry, pref
 		})
 	})
 }
-
 func RegisterResourceListRoute(mux *http.ServeMux, registry *ResourceRegistry, prefix string) {
 	mux.HandleFunc(prefix+"list", func(w http.ResponseWriter, r *http.Request) {
 		var routesInfo []map[string]interface{}

@@ -46,7 +46,110 @@ func (r *ToolRegistry) ListSchemas() []tools.ToolSchema {
 	return schemas
 }
 
-func RegisterToolRoutes(mux *http.ServeMux, registry *ToolRegistry) {
+// RegisterToolRoutesHTTP 注册http接口
+func RegisterToolRoutesHTTP(mux *http.ServeMux, registry *ToolRegistry) {
+	mux.HandleFunc("/tool/invoke", func(w http.ResponseWriter, r *http.Request) {
+		var req message.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			sendError(w, "invalid_request", http.StatusBadRequest)
+			return
+		}
+
+		if req.Method != MethodInvokeTool {
+			sendError(w, "unknown_method", http.StatusBadRequest)
+			return
+		}
+
+		toolName, ok := req.Params["tool_name"].(string)
+		if !ok || toolName == "" {
+			sendError(w, "missing_tool_name", http.StatusBadRequest)
+			return
+		}
+
+		args, ok := req.Params["arguments"].(map[string]interface{})
+		if !ok {
+			sendError(w, "invalid_arguments", http.StatusBadRequest)
+			return
+		}
+
+		tool, exists := registry.Get(toolName)
+		if !exists {
+			sendError(w, "tool_not_found", http.StatusNotFound)
+			return
+		}
+
+		result, err := tool.Execute(args)
+		if err != nil {
+			sendError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		sendSuccess(w, map[string]interface{}{
+			"result": result,
+		})
+	})
+
+	mux.HandleFunc("/tool/list", func(w http.ResponseWriter, r *http.Request) {
+		schemas := registry.ListSchemas()
+		sendSuccess(w, map[string]interface{}{
+			"tools": schemas,
+		})
+	})
+}
+
+// RegisterToolRoutesSSE 注册SEE 接口
+func RegisterToolRoutesSSE(mux *http.ServeMux, registry *ToolRegistry) {
+	mux.HandleFunc("/tool/invoke", func(w http.ResponseWriter, r *http.Request) {
+		var req message.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			sendError(w, "invalid_request", http.StatusBadRequest)
+			return
+		}
+
+		if req.Method != MethodInvokeTool {
+			sendError(w, "unknown_method", http.StatusBadRequest)
+			return
+		}
+
+		toolName, ok := req.Params["tool_name"].(string)
+		if !ok || toolName == "" {
+			sendError(w, "missing_tool_name", http.StatusBadRequest)
+			return
+		}
+
+		args, ok := req.Params["arguments"].(map[string]interface{})
+		if !ok {
+			sendError(w, "invalid_arguments", http.StatusBadRequest)
+			return
+		}
+
+		tool, exists := registry.Get(toolName)
+		if !exists {
+			sendError(w, "tool_not_found", http.StatusNotFound)
+			return
+		}
+
+		result, err := tool.Execute(args)
+		if err != nil {
+			sendError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		sendSuccess(w, map[string]interface{}{
+			"result": result,
+		})
+	})
+
+	mux.HandleFunc("/tool/list", func(w http.ResponseWriter, r *http.Request) {
+		schemas := registry.ListSchemas()
+		sendSuccess(w, map[string]interface{}{
+			"tools": schemas,
+		})
+	})
+}
+
+// RegisterToolRoutesStreamableHTTP 注册流式http接口路由
+func RegisterToolRoutesStreamableHTTP(mux *http.ServeMux, registry *ToolRegistry) {
 	mux.HandleFunc("/tool/invoke", func(w http.ResponseWriter, r *http.Request) {
 		var req message.Request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
