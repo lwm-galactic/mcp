@@ -194,26 +194,46 @@ func RegisterToolRoutesHTTP(mux *http.ServeMux, registry *ToolRegistry) {
 }
 
 func RegisterToolRoutesSSE(mux *http.ServeMux, registry *ToolRegistry) {
+
 	mux.HandleFunc("/tool/invoke", func(w http.ResponseWriter, r *http.Request) {
 		// 设置 SSE 响应头
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
-
 		handleRPC(w, r, makeStreamableInvokeToolHandler(registry))
 	})
 
 	mux.HandleFunc("/tool/list", func(w http.ResponseWriter, r *http.Request) {
+		// 设置 SSE 响应头
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
 		handleRPC(w, r, makeListToolsHandler(registry))
+	})
+
+	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+
 	})
 }
 
 func RegisterToolRoutesStreamableHTTP(mux *http.ServeMux, registry *ToolRegistry) {
 	mux.HandleFunc("/tool/invoke", func(w http.ResponseWriter, r *http.Request) {
+		// 设置 headers
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
 		handleRPC(w, r, makeStreamableInvokeToolHandler(registry))
 	})
 
 	mux.HandleFunc("/tool/list", func(w http.ResponseWriter, r *http.Request) {
+		// 设置 headers
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		
 		handleRPC(w, r, makeListToolsHandler(registry))
 	})
 }
