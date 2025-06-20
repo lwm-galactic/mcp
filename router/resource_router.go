@@ -1,7 +1,6 @@
 package router
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/lwm-galactic/mcp/context"
 	"github.com/lwm-galactic/mcp/core/message"
@@ -80,54 +79,38 @@ func (r *ResourceRegistry) Match(path string) (resources.Resource, map[string]st
 
 // makeReadResourceHandler 创建 read_resource 的处理函数
 func makeReadResourceHandler(registry *ResourceRegistry) handler.RPCHandlerFunc {
-	return func(params map[string]interface{}, w http.ResponseWriter, r *http.Request) error {
+	return func(params map[string]interface{}, w http.ResponseWriter, req message.Request) message.Response {
+		resp := message.Response{}
 		uri, ok := params["uri"].(string)
 		if !ok || uri == "" {
-			return fmt.Errorf("missing or invalid resource URI")
+			resp.Errorf(req.ID, message.NewError(message.InvalidRequest, "uri is required"))
+			return resp
 		}
 
 		resource, exists := registry.Get(uri)
 		if !exists {
-			return fmt.Errorf("resource not found: %s", uri)
+			resp.Errorf(req.ID, message.NewError(message.ResourceNotFound, fmt.Sprintf("%s is not found", uri)))
+			return resp
 		}
 
 		ctx := &context.ResourceContext{
-			Request: nil, // 可选：注入实际请求上下文
-			Params:  map[string]string{},
+			Request: req,
+			Params:  params,
 		}
 
 		content, err := resource.GetContent(ctx)
 		if err != nil {
-			return err
+			resp.Errorf(req.ID, message.NewError(message.InternalError, err.Error()))
+			return resp
 		}
-
-		resp := message.Response{
-			Status: "success",
-			Data:   content,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		if isStreamingRequest(r) {
-			// 流式返回（适用于 SSE 或 Streamable HTTP）
-			flusher, ok := w.(http.Flusher)
-			if !ok {
-				return fmt.Errorf("streaming unsupported")
-			}
-			json.NewEncoder(w).Encode(resp)
-			flusher.Flush()
-		} else {
-			// 普通 HTTP 返回
-			return json.NewEncoder(w).Encode(resp)
-		}
-
-		return nil
+		resp.Success(req.ID, content)
+		return resp
 	}
 }
 
 // makeListResourcesHandler 创建 list_resources 的处理函数
 func makeListResourcesHandler(registry *ResourceRegistry) handler.RPCHandlerFunc {
-	return func(_ map[string]interface{}, w http.ResponseWriter, r *http.Request) error {
+	return func(_ map[string]interface{}, w http.ResponseWriter, req message.Request) message.Response {
 		resources := make([]map[string]interface{}, 0, len(registry.routes))
 		for _, route := range registry.routes {
 			resources = append(resources, map[string]interface{}{
@@ -137,27 +120,9 @@ func makeListResourcesHandler(registry *ResourceRegistry) handler.RPCHandlerFunc
 				"pattern":     route.pattern.String(),
 			})
 		}
-		resp := message.Response{
-			Status: "success",
-			Data:   resources,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		if isStreamingRequest(r) {
-			// 流式返回（适用于 SSE 或 Streamable HTTP）
-			flusher, ok := w.(http.Flusher)
-			if !ok {
-				return fmt.Errorf("streaming unsupported")
-			}
-			json.NewEncoder(w).Encode(resp)
-			flusher.Flush()
-		} else {
-			// 普通 HTTP 返回
-			return json.NewEncoder(w).Encode(resp)
-		}
-
-		return nil
+		resp := message.Response{}
+		resp.Success(req.ID, resources)
+		return resp
 	}
 }
 

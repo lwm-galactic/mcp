@@ -16,5 +16,5 @@ type Resource interface {
 	Name() string
 	Description() string
 	Type() ResourceType // 可以是 "text", "json", "file", "url" 等
-	GetContent(ctx *context.ResourceContext) ([]byte, error)
+	GetContent(ctx *context.ResourceContext) (interface{}, error)
 }

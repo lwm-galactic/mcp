@@ -9,12 +9,19 @@ import (
 
 func handleRPC(w http.ResponseWriter, r *http.Request, handler handler.RPCHandlerFunc) {
 	var req message.Request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, "invalid_request", http.StatusBadRequest)
+	resp := message.Response{}
+	flusher, ok := w.(http.Flusher)
+	if !ok { // 不允许流式返回
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-	if err := handler(req.Params, w, r); err != nil {
-		sendError(w, err.Error(), http.StatusInternalServerError)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		resp.Errorf(req.ID, message.NewError(message.InvalidRequest, "body is required"))
+	} else {
+		resp = handler(req.Params, w, req)
 	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+	flusher.Flush()
 }

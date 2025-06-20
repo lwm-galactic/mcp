@@ -1,7 +1,6 @@
 package router
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/lwm-galactic/mcp/core/message"
 	"github.com/lwm-galactic/mcp/core/tools"
@@ -56,70 +55,34 @@ func (r *ToolRegistry) ListSchemas() []tools.ToolSchema {
 	return schemas
 }
 
-// makeInvokeToolHandler 创建 invokeTool 的处理函数
-func makeInvokeToolHandler(registry *ToolRegistry) handler.RPCHandler {
-	return func(params map[string]interface{}) (interface{}, error) {
-		toolName, ok := params["tool_name"].(string)
-		if !ok || toolName == "" {
-			return nil, fmt.Errorf("missing or invalid tool name")
-		}
-
-		args, ok := params["arguments"].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("invalid arguments")
-		}
-
-		tool, exists := registry.Get(toolName)
-		if !exists {
-			return nil, fmt.Errorf("tool not found: %s", toolName)
-		}
-
-		return tool.Execute(args)
-	}
-}
 func makeStreamableInvokeToolHandler(registry *ToolRegistry) handler.RPCHandlerFunc {
-	return func(params map[string]interface{}, w http.ResponseWriter, r *http.Request) error {
+	return func(params map[string]interface{}, w http.ResponseWriter, req message.Request) message.Response {
+		var resp message.Response
 		toolName, ok := params["tool_name"].(string)
-		if !ok || toolName == "" {
-			return fmt.Errorf("missing or invalid tool name")
+		if !ok || toolName == "" { // 工具名称未传
+			resp.Errorf(req.ID, message.NewError(message.InvalidRequest, "tool_name is required"))
+			return resp
 		}
 
 		args, ok := params["arguments"].(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("invalid arguments")
+		if !ok { // 工具参数错误
+			resp.Errorf(req.ID, message.NewError(message.ParseError, "params arguments is required"))
+			return resp
 		}
 
 		tool, exists := registry.Get(toolName)
-		if !exists {
-			return fmt.Errorf("tool not found: %s", toolName)
+		if !exists { // 工具未找到
+			resp.Errorf(req.ID, message.NewError(message.MethodNotFound, fmt.Sprintf("%s method is not found", toolName)))
+			return resp
 		}
 
 		result, err := tool.Execute(args)
-		if err != nil {
-			return err
+		if err != nil { // 工具执行错误
+			resp.Errorf(req.ID, message.NewError(message.InternalError, fmt.Sprintf("method execute error %s", err.Error())))
+			return resp
 		}
-
-		resp := message.Response{
-			Status: "success",
-			Data:   result,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		if isStreamingRequest(r) {
-			// 流式返回（适用于 SSE 或 Streamable HTTP）
-			flusher, ok := w.(http.Flusher)
-			if !ok {
-				return fmt.Errorf("streaming unsupported")
-			}
-			json.NewEncoder(w).Encode(resp)
-			flusher.Flush()
-		} else {
-			// 普通 HTTP 返回
-			return json.NewEncoder(w).Encode(resp)
-		}
-
-		return nil
+		resp.Success(req.ID, result)
+		return resp
 	}
 }
 
@@ -129,7 +92,7 @@ func isStreamingRequest(r *http.Request) bool {
 
 // makeListToolsHandler 创建 listTools 的处理函数
 func makeListToolsHandler(registry *ToolRegistry) handler.RPCHandlerFunc {
-	return func(_ map[string]interface{}, w http.ResponseWriter, r *http.Request) error {
+	return func(_ map[string]interface{}, w http.ResponseWriter, req message.Request) message.Response {
 		schemas := registry.ListSchemas()
 
 		var mcpTools []MCPTOOL
@@ -154,43 +117,10 @@ func makeListToolsHandler(registry *ToolRegistry) handler.RPCHandlerFunc {
 			})
 		}
 
-		resp := message.Response{
-			Status: "success",
-			Data: map[string]interface{}{
-				"tools": mcpTools,
-			},
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		if isStreamingRequest(r) {
-			flusher, ok := w.(http.Flusher)
-			if !ok {
-				return fmt.Errorf("streaming unsupported")
-			}
-			if err := json.NewEncoder(w).Encode(resp); err != nil {
-				return err
-			}
-			flusher.Flush()
-		} else {
-			if err := json.NewEncoder(w).Encode(resp); err != nil {
-				return err
-			}
-		}
-
-		return nil
+		resp := message.Response{}
+		resp.Success(req.ID, mcpTools)
+		return resp
 	}
-}
-
-// RegisterToolRoutesHTTP 注册http接口
-func RegisterToolRoutesHTTP(mux *http.ServeMux, registry *ToolRegistry) {
-	mux.HandleFunc("/tool/invoke", func(w http.ResponseWriter, r *http.Request) {
-		handleRPC(w, r, makeStreamableInvokeToolHandler(registry))
-	})
-
-	mux.HandleFunc("/tool/list", func(w http.ResponseWriter, r *http.Request) {
-		handleRPC(w, r, makeListToolsHandler(registry))
-	})
 }
 
 func RegisterToolRoutesSSE(mux *http.ServeMux, registry *ToolRegistry) {
@@ -233,7 +163,7 @@ func RegisterToolRoutesStreamableHTTP(mux *http.ServeMux, registry *ToolRegistry
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		
-		handleRPC(w, r, makeListToolsHandler(registry))
+
+		handleRPC(w, r, makeStreamableInvokeToolHandler(registry))
 	})
 }

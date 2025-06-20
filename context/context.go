@@ -1,9 +1,11 @@
 package context
 
-import "net/http"
+import (
+	"github.com/lwm-galactic/mcp/core/message"
+)
 
 // ResourceContext 是传递给 ResourceHandler 的上下文
 type ResourceContext struct {
-	Request *http.Request
-	Params  map[string]string // URL 参数
+	Request message.Request
+	Params  map[string]interface{} // URL 参数
 }
