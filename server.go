@@ -2,6 +2,8 @@ package zeno
 
 import (
 	"fmt"
+	"github.com/lwm-galactic/zeno/core/resources"
+	"github.com/lwm-galactic/zeno/core/tools"
 	"go.uber.org/zap"
 	"net/http"
 	"os"
@@ -19,18 +21,19 @@ const (
 )
 
 type Server struct {
-	Name    string
-	Version string
-	Prefix  string
-	Log     *zap.Logger
-
+	name        string
+	version     string
+	prefix      string
+	log         *zap.Logger
+	router      *rpcRouter
 	middlewares []func(http.Handler) http.Handler
 }
 
 func NewServer(name string) *Server {
 	return &Server{
-		Name:        name,
-		Version:     DefaultVersion,
+		name:        name,
+		version:     DefaultVersion,
+		router:      newRPCRouter(),
 		middlewares: []func(http.Handler) http.Handler{},
 	}
 }
@@ -38,7 +41,7 @@ func NewServer(name string) *Server {
 func (s *Server) Run(transport TransportType, addr ...string) error {
 
 	if GetMode() == DebugMode {
-		s.middlewares = append(s.middlewares, NewLoggingMiddleware(s.Log))
+		s.middlewares = append(s.middlewares, NewLoggingMiddleware(s.log))
 	}
 	// 根据 transport 类型选择处理方式
 	switch transport {
@@ -73,4 +76,12 @@ func (s *Server) startSSE(addr string) error {
 
 func (s *Server) startStreamableHTTP(addr string) error {
 	return nil
+}
+
+func (s *Server) RegisterTool(tool tools.Tool) {
+	s.router.registerTool(tool)
+}
+
+func (s *Server) RegisterResource(resource resources.Resource) {
+	s.router.registerResource(resource)
 }

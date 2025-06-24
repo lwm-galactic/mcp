@@ -1,16 +1,14 @@
 package zeno
 
 import (
-	"encoding/json"
-	"fmt"
 	"github.com/lwm-galactic/zeno/core/message"
-	"net/http"
 )
 
 type HandlerFunc func(*Context)
 
-type RPCHandlerFunc func(params map[string]interface{}, w http.ResponseWriter, r message.Request) message.Response
+type rpcHandlerFunc func(message.Request) message.Response
 
+/*
 func RPCHandler(w http.ResponseWriter, ctx *Context, handler RPCHandlerFunc) {
 	var req message.Request
 	fmt.Println(req)
@@ -26,3 +24,6 @@ func RPCHandler(w http.ResponseWriter, ctx *Context, handler RPCHandlerFunc) {
 	json.NewEncoder(w).Encode(resp)
 	flusher.Flush()
 }
+
+
+*/

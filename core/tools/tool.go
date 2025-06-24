@@ -4,7 +4,7 @@ package tools
 type Tool interface {
 	Name() string
 	Description() string
-	GetSchema() ToolSchema
+	Parameters() []ParamSchema
 	Execute(params map[string]interface{}) (interface{}, error)
 }
 
