@@ -5,6 +5,7 @@ import (
 	"github.com/lwm-galactic/logger"
 	"github.com/lwm-galactic/zeno/core/resources"
 	"github.com/lwm-galactic/zeno/core/tools"
+	"sync"
 
 	"net/http"
 	"os"
@@ -27,6 +28,8 @@ type Server struct {
 	prefix      string
 	mode        string
 	router      *rpcRouter
+	clients     map[string]*client // 所有连接的客户端
+	mu          sync.Mutex         // sse 链接池互斥锁，保证并发安全
 	middlewares []func(http.Handler) http.Handler
 }
 
@@ -44,6 +47,9 @@ func (s *Server) Run(transport TransportType, addr ...string) error {
 		s.middlewares = append(s.middlewares, NewRequestLoggingMiddleware())
 		s.printTool()
 		s.printTool()
+	}
+	if GetMode() == ReleaseMode {
+		logger.SetLogLevel(-2)
 	}
 	// 根据 transport 类型选择处理方式
 	switch transport {
@@ -75,6 +81,8 @@ func resolveAddress(addr []string) string {
 }
 
 func (s *Server) startSSE(addr string) error {
+	s.clients = make(map[string]*client) // 初始化链接池
+	http.HandleFunc("/sse", handleSSE(s))
 	return nil
 }
 
@@ -94,6 +102,7 @@ func init() {
 	logger.SetModName("[zeno]")
 }
 
+// 打印 注册的工具列表
 func (s *Server) printTool() {
 	info := "Tool: \n"
 	for _, tool := range s.router.toolList {
@@ -102,6 +111,7 @@ func (s *Server) printTool() {
 	logger.Debug(info)
 }
 
+// 打印 注册的资源列表
 func (s *Server) printResource() {
 	info := "Resource: \n"
 	for _, resource := range s.router.resourceList {

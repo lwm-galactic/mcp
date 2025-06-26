@@ -3,6 +3,7 @@ package zeno
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/lwm-galactic/logger"
 	"github.com/lwm-galactic/zeno/core/message"
 	"github.com/lwm-galactic/zeno/core/resources"
 	"github.com/lwm-galactic/zeno/core/tools"
@@ -39,7 +40,7 @@ func (s *Server) serverStart(addr string) error {
 
 	}))
 
-	fmt.Printf("Server is starting at http://%s ", addr)
+	logger.Info("Server is starting at http://%s ", addr)
 	// 启动 HTTP 服务
 	return http.ListenAndServe(addr, mux)
 }
@@ -119,7 +120,7 @@ func (r *rpcRouter) rpcHandler(request message.Request) message.Response {
 
 func (r *rpcRouter) registerTool(tool tools.Tool) {
 	if _, ok := r.toolMap[tool.Name()]; ok {
-		panic(fmt.Sprintf("Tool %s already registered", tool.Name()))
+		logger.Errorf("Tool %s already registered", tool.Name())
 	}
 	r.toolMap[tool.Name()] = tool
 	r.toolList = append(r.toolList, tool)
@@ -127,7 +128,7 @@ func (r *rpcRouter) registerTool(tool tools.Tool) {
 
 func (r *rpcRouter) registerResource(resource resources.Resource) {
 	if _, ok := r.resourceMap[resource.Name()]; ok {
-		panic(fmt.Sprintf("Resource %s already registered", resource.Name()))
+		logger.Errorf("Resource %s already registered", resource.Name())
 	}
 	r.resourceMap[resource.Name()] = resource
 	r.resourceList = append(r.resourceList, resource)
