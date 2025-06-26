@@ -2,9 +2,10 @@ package zeno
 
 import (
 	"fmt"
+	"github.com/lwm-galactic/logger"
 	"github.com/lwm-galactic/zeno/core/resources"
 	"github.com/lwm-galactic/zeno/core/tools"
-	"go.uber.org/zap"
+
 	"net/http"
 	"os"
 )
@@ -24,7 +25,7 @@ type Server struct {
 	name        string
 	version     string
 	prefix      string
-	log         *zap.Logger
+	mode        string
 	router      *rpcRouter
 	middlewares []func(http.Handler) http.Handler
 }
@@ -39,9 +40,10 @@ func NewServer(name string) *Server {
 }
 
 func (s *Server) Run(transport TransportType, addr ...string) error {
-
 	if GetMode() == DebugMode {
-		s.middlewares = append(s.middlewares, NewLoggingMiddleware(s.log))
+		s.middlewares = append(s.middlewares, NewRequestLoggingMiddleware())
+		s.printTool()
+		s.printTool()
 	}
 	// 根据 transport 类型选择处理方式
 	switch transport {
@@ -50,6 +52,7 @@ func (s *Server) Run(transport TransportType, addr ...string) error {
 	case TransportStreamableHTTP:
 		return s.startStreamableHTTP(resolveAddress(addr))
 	default:
+		logger.Errorf("Unsupported transport type: %s", transport)
 		return fmt.Errorf("unsupported transport type: %s", transport)
 	}
 }
@@ -58,15 +61,16 @@ func resolveAddress(addr []string) string {
 	switch len(addr) {
 	case 0:
 		if port := os.Getenv("PORT"); port != "" {
-			debugPrint("Environment variable PORT=\"%s\"", port)
+			logger.Debug("Environment variable PORT=\"%s\"", port)
 			return ":" + port
 		}
-		debugPrint("Environment variable PORT is undefined. Using port :8080 by default")
+		logger.Debug("Environment variable PORT is undefined. Using port :8080 by default")
 		return ":8080"
 	case 1:
 		return addr[0]
 	default:
-		panic("too many parameters")
+		logger.Panic("too many parameters")
+		return ""
 	}
 }
 
@@ -84,4 +88,24 @@ func (s *Server) RegisterTool(tool tools.Tool) {
 
 func (s *Server) RegisterResource(resource resources.Resource) {
 	s.router.registerResource(resource)
+}
+
+func init() {
+	logger.SetModName("[zeno]")
+}
+
+func (s *Server) printTool() {
+	info := "Tool: \n"
+	for _, tool := range s.router.toolList {
+		info += fmt.Sprintf("[zeno]\t Name:%s \t --> %s \n ", tool.Name(), tool.Description())
+	}
+	logger.Debug(info)
+}
+
+func (s *Server) printResource() {
+	info := "Resource: \n"
+	for _, resource := range s.router.resourceList {
+		info += fmt.Sprintf("[zeno]\t Name:%s \t --> %s \n ", resource.Name(), resource.Description())
+	}
+	logger.Debug(info)
 }
